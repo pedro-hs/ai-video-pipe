@@ -8,22 +8,22 @@ Also allow generate image or speech without generating a video.
 - SDXL generates bad images, due to that, was added the option to regenerate images and change prompts
 
 ### Features:
--Generate image
--Generate speech
--Generate video
+- Generate image
+- Generate speech
+- Generate video
 
 ### Video Features:
--Add pause in speech, adding the text `(silence)` in narration
--Split video in vertical videos, using `(silence)`
--Zoom (ken burn)
--Film grain filter
--Input background sound through frontend
--Input narration and image style params through frontend
--Detect subscription in narration and add subscription overlay
--Generate videos in english, portuguese, spanish
--Create video in one language, add or remove text in narration (with Ollama suggestions) to keep the same video length, so application can reuse the same visuals for each language
--Edit video, renegerating images or change narration text and regenerate the video with updated images and speech
--Images, narration and prompts of each video is saved in output folder, is possible to regenerate video, you can delete temp/ folder or final videos to save disk space
+- Add pause in speech, adding the text `(silence)` in narration
+- Split video in vertical videos, using `(silence)`
+- Zoom (ken burn)
+- Film grain filter
+- Input background sound through frontend
+- Input narration and image style params through frontend
+- Detect subscription in narration and add subscription overlay
+- Generate videos in english, portuguese, spanish
+- Create video in one language, add or remove text in narration (with Ollama suggestions) to keep the same video length, so application can reuse the same visuals for each language
+- Edit video, renegerating images or change narration text and regenerate the video with updated images and speech
+- Images, narration and prompts of each video is saved in output folder, is possible to regenerate video, you can delete temp/ folder or final videos to save disk space
 
 ### Ouput Folder:
 - ouput/audios/ ->  generated speech by Piper TTS
