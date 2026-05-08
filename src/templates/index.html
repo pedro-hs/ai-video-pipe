@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="status-bar" id="statusBar">
+                <div class="status-item" id="status-ollama">
+                    <span class="status-dot"></span>
+                    <strong>Ollama</strong>
+                    <div>LLM</div>
+                </div>
+                <div class="status-item" id="status-ai">
+                    <span class="status-dot"></span>
+                    <strong>AI Processor</strong>
+                    <div>GPU</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="alerts"></div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('generate')">🎨 Gerar Vídeo</button>
+            <button class="tab" onclick="showTab('image')">🖼️ Gerar Imagem</button>
+            <button class="tab" onclick="showTab('audio')">🎙️ Gerar Áudio</button>
+            <button class="tab" onclick="showTab('translate')">🌐 Traduzir</button>
+            <button class="tab" onclick="showTab('videos')">📹 Meus Vídeos</button>
+            <button class="tab" onclick="showTab('images')">🖼️ Minhas Imagens</button>
+        </div>
+        
+        <div id="tab-generate" class="tab-content active">
+            <div class="card">
+                <form id="generateForm">
+                    <div class="form-group">
+                        <label for="narration">📝 Roteiro de Narração</label>
+                        <textarea 
+                            id="narration" 
+                            name="narration" 
+                            placeholder="Cole aqui o roteiro de narração completo (gerado no ChatGPT)"
+                            required
+                            rows="15"
+                            oninput="calculateDurationFromNarration()"
+                        ></textarea>
+                        <small style="color: #666;">Cole o roteiro de narração completo. Use (silence) para pausas.</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>⏱️ Duração Estimada</label>
+                        <div id="estimatedDuration" style="padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; font-weight: bold; color: white; text-align: center; font-size: 16px;">
+                            ~0 segundos (digite o roteiro acima)
+                        </div>
+                        <small style="color: #666;">Duração calculada automaticamente a partir do número de palavras (2.4 palavras/segundo)</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="videoLanguage">🌐 Idioma</label>
+                        <select id="videoLanguage" name="videoLanguage">
+                            <option value="pt" selected>🇧🇷 Português (Brasil)</option>
+                            <option value="en">🇺🇸 English</option>
+                            <option value="es">🇪🇸 Español</option>
+                        </select>
+                        <small style="color: #666;">Selecione o idioma para a geração do vídeo</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="style">🎨 Estilo Visual</label>
+                        <input
+                            type="text"
+                            id="style"
+                            name="style"
+                            placeholder="Ex: cartoon, realistic"
+                            required
+                        />
+                        <small style="color: #666;">Estilo que será aplicado a todas as imagens do vídeo</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="negativePrompt">🚫 Prompt Negativo</label>
+                        <textarea 
+                            id="negativePrompt" 
+                            name="negativePrompt" 
+                            placeholder="Ex: blurry, low quality, distorted, ugly, bad anatomy, extra fingers"
+                            rows="3"
+                        ></textarea>
+                        <small style="color: #666;">O que você NÃO quer ver nas imagens (opcional)</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="musics">🎵 Músicas de Fundo (Opcional)</label>
+                        <input
+                            type="file"
+                            id="musics"
+                            name="musics"
+                            multiple
+                            accept="audio/*"
+                            style="padding: 8px; border: 2px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px; width: 100%;"
+                        />
+                        <small style="color: #666;">Selecione uma ou mais músicas para usar como fundo (serão reproduzidas sequencialmente e em loop, volume reduzido para 20%)</small>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="generateBtn">
+                        🎬 Gerar
+                    </button>
+                </form>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p><strong>Gerando...</strong></p>
+                    <p>Isso pode levar alguns minutos. Aguarde!</p>
+                </div>
+                
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                
+                <div class="status-monitor" id="statusMonitor">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">📊 Real-Time Generation Status</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="forceRefreshStatus()" class="btn btn-small" style="width: auto; padding: 8px 16px; font-size: 14px;">
+                                🔄 Atualizar
+                            </button>
+                            <button onclick="stopGeneration()" id="stopBtn" class="btn btn-small" style="width: auto; padding: 8px 16px; font-size: 14px; background: #dc3545; display: none;">
+                                ⛔ Parar Geração
+                            </button>
+                        </div>
+                    </div>
+                    <div class="status-message" id="statusMessage">Initializing...</div>
+                    
+                    <div class="status-grid">
+                        <div class="status-card">
+                            <div class="status-label">Stage</div>
+                            <div class="status-value" id="statusStage">-</div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">GPU Usage</div>
+                            <div class="status-value" id="statusGPU">0%</div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">GPU Memory</div>
+                            <div class="status-value" id="statusMemory">0 MB</div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">GPU Temp</div>
+                            <div class="status-value gpu-temp" id="statusTemp">-</div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white;">
+                        <h4 style="margin: 0 0 20px 0; font-size: 18px; text-align: center;">🤖 Prompts Gerados por IA</h4>
+                        
+                        <div style="margin-bottom: 20px; background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; backdrop-filter: blur(10px);">
+                            <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">
+                                🖼️ Prompts das Imagens:
+                            </div>
+                            <div id="imagePrompts" style="font-size: 13px; color: #fff; padding: 12px; background: rgba(255,255,255,0.2); border-radius: 8px; font-style: italic; line-height: 1.4; min-height: 60px; max-height: 200px; overflow-y: auto;">
+                                <span style="opacity: 0.7;">Aguardando geração das imagens...</span>
+                            </div>
+                        </div>
+                        
+                        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; backdrop-filter: blur(10px);">
+                            <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">
+                                🎙️ Roteiro de Narração (TTS):
+                            </div>
+                            <div id="narrationScript" style="font-size: 14px; color: #fff; padding: 12px; background: rgba(255,255,255,0.2); border-radius: 8px; font-style: italic; line-height: 1.4; min-height: 60px; display: flex; align-items: flex-start;">
+                                <span style="opacity: 0.7;">Processando roteiro de narração...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Terminal View -->
+                    <div style="margin-top: 20px; padding: 20px; background: #1e1e1e; border-radius: 15px; color: #d4d4d4; font-family: 'Courier New', monospace;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h4 style="margin: 0; font-size: 18px; color: #4ec9b0;">💻 Terminal Logs</h4>
+                            <button onclick="clearTerminalLogs()" class="btn btn-small" style="width: auto; padding: 6px 12px; font-size: 12px; background: #3c3c3c; color: #d4d4d4; border: 1px solid #555;">
+                                🗑️ Limpar
+                            </button>
+                        </div>
+                        <div id="terminalLogs" style="
+                            background: #0d0d0d;
+                            border: 1px solid #333;
+                            border-radius: 8px;
+                            padding: 15px;
+                            min-height: 200px;
+                            max-height: 400px;
+                            overflow-y: auto;
+                            font-size: 13px;
+                            line-height: 1.6;
+                            font-family: 'Courier New', monospace;
+                        ">
+                            <div style="color: #858585; font-style: italic;">Aguardando logs...</div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-image" class="tab-content">
+            <div class="card">
+                <h2>Criar Nova Imagem</h2>
+                
+                <form id="generateImageForm">
+                    <div class="form-group">
+                        <label for="imagePrompt">🎨 Prompt da Imagem</label>
+                        <textarea 
+                            id="imagePrompt" 
+                            name="prompt" 
+                            placeholder="Ex: um gato espacial explorando a lua, com estrelas brilhantes e planetas coloridos"
+                            required
+                        ></textarea>
+                        <small style="color: #666;">Descreva exatamente o que você quer ver na imagem.</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="imageSize">📐 Tamanho da Imagem</label>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
+                            <input 
+                                type="number" 
+                                id="imageWidth" 
+                                name="width" 
+                                placeholder="Largura"
+                                min="256"
+                                max="2048"
+                                style="flex: 1; padding: 8px; border: 2px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;"
+                            >
+                            <span style="color: #999; font-size: 18px;">x</span>
+                            <input 
+                                type="number" 
+                                id="imageHeight" 
+                                name="height" 
+                                placeholder="Altura"
+                                min="256"
+                                max="2048"
+                                style="flex: 1; padding: 8px; border: 2px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;"
+                            >
+                        </div>
+                        <small style="color: #666;">Digite a largura e altura desejadas (padrão: <span id="defaultImageResolution">1280x960</span>)</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="imageNegativePrompt">🚫 Prompt Negativo</label>
+                        <textarea 
+                            id="imageNegativePrompt" 
+                            name="imageNegativePrompt" 
+                            placeholder="Ex: blurry, low quality, distorted, ugly, bad anatomy, extra fingers"
+                            rows="3"
+                        ></textarea>
+                        <small style="color: #666;">O que você NÃO quer ver na imagem (opcional)</small>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="generateImageBtn">
+                        🖼️ Gerar Imagem
+                    </button>
+                </form>
+                
+                <div class="loading" id="imageLoading">
+                    <div class="spinner"></div>
+                    <p><strong>Gerando sua imagem...</strong></p>
+                    <p>Isso pode levar de 30 segundos a 2 minutos.</p>
+                </div>
+                
+                <div class="progress-bar" id="imageProgressBar">
+                    <div class="progress-fill" id="imageProgressFill">0%</div>
+                </div>
+                
+                <div class="status-monitor" id="imageStatusMonitor">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">📊 Status da Geração</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="forceRefreshImageStatus()" class="btn btn-small" style="width: auto; padding: 8px 16px; font-size: 14px;">
+                                🔄 Atualizar
+                            </button>
+                            <button onclick="stopImageGeneration()" id="stopImageBtn" class="btn btn-small" style="width: auto; padding: 8px 16px; font-size: 14px; background: #dc3545; display: none;">
+                                ⛔ Parar Geração
+                            </button>
+                        </div>
+                    </div>
+                    <div class="status-message" id="imageStatusMessage">Initializing...</div>
+                    
+                    <div class="status-grid">
+                        <div class="status-card">
+                            <div class="status-label">Stage</div>
+                            <div class="status-value" id="imageStatusStage">-</div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Progress</div>
+                            <div class="status-value" id="imageStatusProgress">0%</div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">GPU Usage</div>
+                            <div class="status-value" id="imageStatusGPU">0%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-videos" class="tab-content">
+            <div class="card">
+                <h2>Vídeos Gerados</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <button class="btn btn-small" onclick="loadVideos()" style="width: auto;">
+                        🔄 Atualizar Lista
+                    </button>
+                </div>
+                <div class="video-grid" id="videoGrid">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                        </svg>
+                        <p>Nenhum vídeo gerado ainda</p>
+                        <p style="margin-top: 10px;">Vá para a aba "Gerar Vídeo" para criar seu primeiro vídeo!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-images" class="tab-content">
+            <div class="card">
+                <h2>Imagens Geradas</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <button class="btn btn-small" onclick="loadImages()" style="width: auto;">
+                        🔄 Atualizar Lista
+                    </button>
+                    <button class="btn btn-small" onclick="deleteAllImages()" style="width: auto; background: #dc3545;">
+                        🗑️ Deletar Todas
+                    </button>
+                </div>
+                <div class="video-grid" id="imageGrid">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        <p>Nenhuma imagem gerada ainda</p>
+                        <p style="margin-top: 10px;">Vá para a aba "Gerar Imagem" para criar sua primeira imagem!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-audio" class="tab-content">
+            <div class="card">
+                <h2>Gerar Áudio</h2>
+                <form id="generateAudioForm">
+                    <div class="form-group">
+                        <label for="audioText">📝 Texto para Narração</label>
+                        <textarea 
+                            id="audioText" 
+                            name="audioText" 
+                            placeholder="Digite o texto para cada áudio. Cada linha em branco separa um novo áudio.&#10;&#10;Exemplo:&#10;Primeiro áudio aqui&#10;&#10;Segundo áudio aqui&#10;&#10;Terceiro áudio aqui"
+                            rows="10"
+                            required
+                        ></textarea>
+                        <small style="color: #666;">Cada linha em branco separa um novo áudio. Cada parágrafo será gerado como um arquivo de áudio separado.</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="audioLanguage">🌐 Idioma</label>
+                        <select id="audioLanguage" name="audioLanguage">
+                            <option value="pt" selected>🇧🇷 Português (Brasil)</option>
+                            <option value="en">🇺🇸 English</option>
+                            <option value="es">🇪🇸 Español</option>
+                        </select>
+                        <small style="color: #666;">Selecione o idioma para a geração do áudio</small>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="generateAudioBtn">
+                        🎙️ Gerar Áudios
+                    </button>
+                </form>
+                
+                <div class="loading" id="audioLoading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p><strong>Gerando áudios...</strong></p>
+                    <p id="audioLoadingText">Isso pode levar alguns minutos.</p>
+                </div>
+                
+                <div id="audioResults" style="margin-top: 20px;"></div>
+            </div>
+            
+            <div class="card" style="margin-top: 20px;">
+                <h2>Áudios Gerados</h2>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <button class="btn btn-small" onclick="loadAudios()" style="width: auto;">
+                        🔄 Atualizar Lista
+                    </button>
+                    <button class="btn btn-small" onclick="deleteAllAudios()" style="width: auto; background: #dc3545;">
+                        🗑️ Deletar Todos
+                    </button>
+                </div>
+                <div class="video-grid" id="audioGrid">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                        </svg>
+                        <p>Nenhum áudio gerado ainda</p>
+                        <p style="margin-top: 10px;">Use o formulário acima para gerar seus primeiros áudios!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-translate" class="tab-content">
+            <div class="card">
+                <h2>🌐 Traduzir Texto</h2>
+                <form id="translateForm">
+                    <div class="form-group">
+                        <label for="translateText">📝 Texto para Traduzir</label>
+                        <textarea 
+                            id="translateText" 
+                            name="translateText" 
+                            placeholder="Digite ou cole o texto em português que deseja traduzir..."
+                            rows="10"
+                            required
+                        ></textarea>
+                        <small style="color: #666;">O texto será traduzido do português para o idioma selecionado abaixo.</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="translateTargetLanguage">🌍 Idioma Destino</label>
+                        <select id="translateTargetLanguage" name="translateTargetLanguage">
+                            <option value="en">🇺🇸 Inglês (English)</option>
+                            <option value="es">🇪🇸 Espanhol (Spanish)</option>
+                        </select>
+                        <small style="color: #666;">Selecione para qual idioma deseja traduzir o texto</small>
+                    </div>
+                    
+                    <button type="submit" class="btn" id="translateBtn">
+                        🌐 Traduzir
+                    </button>
+                </form>
+                
+                <div class="loading" id="translateLoading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p><strong>Traduzindo...</strong></p>
+                    <p>Aguarde enquanto o Google Translate processa a tradução.</p>
+                </div>
+                
+                <div id="translateResult" class="card" style="margin-top: 20px; display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">✅ Texto Traduzido</h3>
+                        <button onclick="copyTranslatedText()" class="btn btn-small" id="copyTranslateBtn" style="width: auto; padding: 8px 16px; font-size: 14px; display: none;">
+                            📋 Copiar
+                        </button>
+                    </div>
+                    <div style="padding: 15px; background: #f5f5f5; border-radius: 8px; border: 2px solid #ddd; min-height: 100px; max-height: 400px; overflow-y: auto;">
+                        <p id="translateResultText" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #333; line-height: 1.6;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Video Edit Modal -->
+    <div id="videoEditModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>✏️ Editar Vídeo</h2>
+                <button onclick="closeVideoEditModal()" class="btn btn-small" style="background: #dc3545; max-width: 33.333%;">Fechar X</button>
+            </div>
+            
+            <div id="videoEditContent">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Carregando dados do vídeo...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/status.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/video-edit.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/translate.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/paragraph-review.js') }}" defer></script>
+    
+    <!-- English Export Modal -->
+    <div id="englishModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px; background: #fff; margin: 5% auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">🇬🇧 Gerar Versão em Inglês</h2>
+                <span class="close" onclick="closeEnglishModal()" style="cursor: pointer; font-size: 28px; font-weight: bold; color: #aaa; line-height: 1;">&times;</span>
+            </div>
+            <div class="form-group">
+                <label for="englishNarrationText" style="display: block; margin-bottom: 8px; font-weight: bold;">📝 Narração em Inglês</label>
+                <textarea 
+                    id="englishNarrationText" 
+                    name="englishNarrationText" 
+                    placeholder="Cole aqui a tradução em inglês completa. Use (silence) para pausas."
+                    rows="10"
+                    style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; box-sizing: border-box;"
+                    required
+                ></textarea>
+                <small style="color: #666; display: block; margin-top: 8px;">A narração em inglês será usada para gerar o áudio e criar a versão em inglês do vídeo.</small>
+            </div>
+            <input type="hidden" id="englishModalFolder" value="">
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="closeEnglishModal()" class="btn btn-small" style="background: #6c757d;">Cancelar</button>
+                <button onclick="submitEnglishExportDirect()" id="englishExportDirectBtn" class="btn btn-small" style="background: #6c757d; border: 1px solid #5a6268;">Gerar sem Análise</button>
+                <button onclick="submitEnglishExport()" id="englishExportBtn" class="btn btn-small" style="background: #007bff;">Gerar com Análise</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Spanish Export Modal -->
+    <div id="spanishModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px; background: #fff; margin: 5% auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">🇪🇸 Gerar Versão em Espanhol</h2>
+                <span class="close" onclick="closeSpanishModal()" style="cursor: pointer; font-size: 28px; font-weight: bold; color: #aaa; line-height: 1;">&times;</span>
+            </div>
+            <div class="form-group">
+                <label for="spanishNarrationText" style="display: block; margin-bottom: 8px; font-weight: bold;">📝 Narração em Espanhol</label>
+                <textarea 
+                    id="spanishNarrationText" 
+                    name="spanishNarrationText" 
+                    placeholder="Cole aqui a tradução em espanhol completa. Use (silence) para pausas."
+                    rows="10"
+                    style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; box-sizing: border-box;"
+                    required
+                ></textarea>
+                <small style="color: #666; display: block; margin-top: 8px;">A narração em espanhol será usada para gerar o áudio e criar a versão em espanhol do vídeo.</small>
+            </div>
+            <input type="hidden" id="spanishModalFolder" value="">
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="closeSpanishModal()" class="btn btn-small" style="background: #6c757d;">Cancelar</button>
+                <button onclick="submitSpanishExportDirect()" id="spanishExportDirectBtn" class="btn btn-small" style="background: #6c757d; border: 1px solid #5a6268;">Gerar sem Análise</button>
+                <button onclick="submitSpanishExport()" id="spanishExportBtn" class="btn btn-small" style="background: #007bff;">Gerar com Análise</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Portuguese Export Modal -->
+    <div id="portugueseModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px; background: #fff; margin: 5% auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">🇧🇷 Gerar Versão em Português</h2>
+                <span class="close" onclick="closePortugueseModal()" style="cursor: pointer; font-size: 28px; font-weight: bold; color: #aaa; line-height: 1;">&times;</span>
+            </div>
+            <div class="form-group">
+                <label for="portugueseNarrationText" style="display: block; margin-bottom: 8px; font-weight: bold;">📝 Narração em Português</label>
+                <textarea 
+                    id="portugueseNarrationText" 
+                    name="portugueseNarrationText" 
+                    placeholder="Cole aqui a tradução em português completa. Use (silence) para pausas."
+                    rows="10"
+                    style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; box-sizing: border-box;"
+                    required
+                ></textarea>
+                <small style="color: #666; display: block; margin-top: 8px;">A narração em português será usada para gerar o áudio e criar a versão em português do vídeo.</small>
+            </div>
+            <input type="hidden" id="portugueseModalFolder" value="">
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="closePortugueseModal()" class="btn btn-small" style="background: #6c757d;">Cancelar</button>
+                <button onclick="submitPortugueseExport()" id="portugueseExportBtn" class="btn btn-small" style="background: #007bff;">Gerar Vídeo</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Review Suggestions Modal -->
+    <div id="reviewModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 1400px; background: #fff; margin: 2% auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">📝 Revisão de Ajustes de Duração</h2>
+                <span class="close" onclick="closeReviewModal()" style="cursor: pointer; font-size: 28px; font-weight: bold; color: #aaa; line-height: 1;">&times;</span>
+            </div>
+            <div id="reviewContent" style="margin-bottom: 20px;">
+                <!-- Paragraph review cards will be inserted here -->
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; border-top: 1px solid #ddd; padding-top: 20px;">
+                <button onclick="closeReviewModal()" class="btn btn-small" style="background: #6c757d;">Cancelar</button>
+                <button onclick="applySelectedSuggestions()" id="applySelectedBtn" class="btn btn-small" style="background: #007bff;">Gerar Vídeo</button>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.5);
+    }
+    
+    .modal-content {
+        background-color: #fefefe;
+        margin: 5% auto;
+        padding: 30px;
+        border: 1px solid #888;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    
+    .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+    }
+    
+    .close:hover,
+    .close:focus {
+        color: #000;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    </style>
+</body>
+</html>
+
